@@ -1,5 +1,6 @@
 // DOM UI: HUD, panels (shop / skills / finds / menu), toasts, floating numbers, banners.
-import { LAYERS, TOOLS, BAGS, MACHINES, MACHINE_MAX, SKILLS, BRANCHES, TREASURES, ACHIEVEMENTS, CORE_DEPTH, machineRate } from './data.js';
+import { LAYERS, TOOLS, BAGS, MACHINES, MACHINE_MAX, SKILLS, BRANCHES, TREASURES, ACHIEVEMENTS, CORE_DEPTH, machineRate, STATION } from './data.js';
+import { view, toApp, deltaToApp } from './view.js';
 import { SKILL_BY_ID } from './state.js';
 import * as Models from './models.js';
 
@@ -64,7 +65,6 @@ export class UI {
 
   // ------------------------------------------------------------ HUD
   bindHud() {
-    $('sellBtn').addEventListener('pointerdown', (e) => { e.stopPropagation(); this.hooks.sell(); });
     document.querySelectorAll('.navbtn').forEach(b => b.addEventListener('click', () => { this.audio.ui(); this.open(b.dataset.panel); }));
     $('menuBtn').addEventListener('click', () => { this.audio.ui(); this.open('menu'); });
     $('sheetClose').addEventListener('click', () => this.close());
@@ -96,10 +96,7 @@ export class UI {
     $('bagBar').classList.toggle('full', frac >= 0.999);
     const bt = auto ? 'conveyor' : `${fmtShort(s.bagUnits)} / ${fmtShort(st.bagCap)}`;
     if (bt !== L.bt) { $('bagText').textContent = bt; L.bt = bt; }
-    const showSell = !auto && s.bagUnits > 0 && (frac > 0.25 || s.bagValue > 0 && st.machineRate === 0);
-    $('sellBtn').classList.toggle('hidden', !showSell);
-    $('sellBtn').classList.toggle('urgent', frac >= 0.999);
-    if (showSell) { const sv = '+' + fmtShort(s.bagValue); if (sv !== L.sv) { $('sellVal').textContent = sv; L.sv = sv; } }
+    this.updateDropOff(frac, auto);
 
     // progress to next skill point
     const pf = this.hooks.nextPointFrac();
@@ -116,6 +113,36 @@ export class UI {
     this.updateFloats(dt);
     this.updateBoulderBars();
     if (this.panel && (this._refreshT = (this._refreshT || 0) + dt) > 0.25) { this._refreshT = 0; this.refreshPanel(); }
+  }
+
+  updateDropOff(frac, auto) {
+    const tag = $('dropTag'), arrow = $('dropArrow');
+    const p = this.scene.stationScreen();
+    const onScreen = !p.behind && p.x > 30 && p.x < view.w - 30 && p.y > 40 && p.y < view.h - 20;
+    const want = !auto && frac > 0.6;
+    if (onScreen) {
+      arrow.classList.add('hidden');
+      tag.classList.toggle('hidden', !(want || p.dist < 9));
+      tag.classList.toggle('pulse', frac >= 0.999);
+      tag.style.left = p.x + 'px'; tag.style.top = p.y + 'px';
+    } else {
+      tag.classList.add('hidden');
+      arrow.classList.toggle('hidden', !want);
+      if (want) {
+        // point from the screen centre toward the station, pinned to the edge
+        let dx = p.x - view.w / 2, dy = p.y - view.h / 2;
+        if (p.behind) { dx = -dx; dy = -dy; }
+        const ang = Math.atan2(dy, dx);
+        const ex = view.w / 2 - 90, ey = view.h / 2 - 70;
+        const k = Math.min(ex / Math.abs(Math.cos(ang) || 1e-3), ey / Math.abs(Math.sin(ang) || 1e-3));
+        arrow.style.left = (view.w / 2 + Math.cos(ang) * k) + 'px';
+        arrow.style.top = (view.h / 2 + Math.sin(ang) * k) + 'px';
+        arrow.firstElementChild.style.transform = `rotate(${ang}rad)`;
+      }
+    }
+    const d = this.g.depositing;
+    $('depositInfo').classList.toggle('hidden', !d);
+    if (d) $('depositInfo').innerHTML = `Dropping off&nbsp; <em>+${fmtShort(d.value)}</em>`;
   }
 
   bumpCoins() { const c = $('coins'); c.classList.remove('bump'); void c.offsetWidth; c.classList.add('bump'); }
@@ -196,7 +223,8 @@ export class UI {
     this.panel = name;
     if (name === 'skills') { $('tree').classList.remove('hidden'); this.renderTree(); this.centerTree(); return; }
     $('sheet').classList.remove('hidden', 'closing');
-    this.tab = { shop: this.tab_shop || 'tools', finds: 'finds', menu: this.tab_menu || 'feats' }[name];
+    this.tab = { shop: this.tab_shop || 'tools', finds: 'finds', menu: this.tab_menu || 'feats', station: 'dropoff' }[name];
+    if (name === 'station') { this.panel = 'shop'; this.tab = this.tab_shop = 'dropoff'; }
     this.renderSheet();
   }
   close() {
@@ -211,7 +239,7 @@ export class UI {
 
   renderSheet() {
     const name = this.panel;
-    const tabs = { shop: [['tools', 'Tools'], ['machines', 'Machines'], ['bags', 'Bags']], finds: [], menu: [['feats', 'Feats'], ['stats', 'Stats'], ['settings', 'Settings']] }[name];
+    const tabs = { shop: [['tools', 'Tools'], ['machines', 'Machines'], ['bags', 'Bags'], ['dropoff', 'Drop-off']], finds: [], menu: [['feats', 'Feats'], ['stats', 'Stats'], ['settings', 'Settings']] }[name];
     $('sheetTitle').textContent = { shop: 'Shop', finds: 'Finds', menu: 'Menu' }[name];
     const tabsEl = $('sheetTabs');
     tabsEl.innerHTML = '';
@@ -253,6 +281,18 @@ export class UI {
 
   renderShop(body) {
     const g = this.g, s = g.s;
+    if (this.tab === 'dropoff') {
+      body.appendChild(this.note('Walk into the glowing ring by the yellow bin and your bag empties itself for coins. Upgrades reset on New Game+.'));
+      STATION.forEach((u, i) => {
+        const L = s.station[u.id];
+        body.appendChild(this.row({
+          thumb: this.thumbFor('st' + i, () => this.stationThumb(i)), name: u.name,
+          stat: u.stat(L), blurb: L < u.max ? `Next: ${u.stat(L + 1)}` : u.blurb, pips: [L, u.max],
+          cost: g.stationUpCost(i), done: L >= u.max ? 'MAXED' : null, onBuy: () => this.hooks.buy('station', i),
+        }));
+      });
+      return;
+    }
     if (this.tab === 'tools') {
       const cur = TOOLS[s.tool];
       body.appendChild(this.label('Equipped'));
@@ -288,6 +328,12 @@ export class UI {
         body.appendChild(this.row({ thumb: this.thumbFor('bag' + (s.bag + 1), () => Models.buildBag(s.bag + 1)), name: nx.name, stat: `Base size ${fmtShort(nx.cap)} (now ${fmtShort(cur.cap)})`, cost: g.bagCost(), onBuy: () => this.hooks.buy('bag') }));
       }
     }
+  }
+  stationThumb(i) {
+    if (i === 0) { const st = Models.buildStation(); st.userData.light.visible = false; st.userData.lift.visible = false; return st; }
+    if (i === 1) return Models.buildTreasure({ shape: 'coin', color: '#e3b23c' });
+    if (i === 2) return Models.buildBag(1);
+    return Models.buildTreasure({ shape: 'gem', color: '#5fd38a' });
   }
   machineThumb(i) {
     switch (MACHINES[i].id) {
@@ -423,13 +469,13 @@ export class UI {
     let start = null, moved = 0;
     svg.addEventListener('pointerdown', (e) => {
       svg.setPointerCapture(e.pointerId);
-      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      ptrs.set(e.pointerId, toApp(e.clientX, e.clientY));
       moved = 0;
       start = { view: { ...this.view }, pts: [...ptrs.values()].map(p => ({ ...p })) };
     });
     svg.addEventListener('pointermove', (e) => {
       if (!ptrs.has(e.pointerId)) return;
-      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      ptrs.set(e.pointerId, toApp(e.clientX, e.clientY));
       const pts = [...ptrs.values()];
       if (pts.length === 1 && start.pts.length === 1) {
         const dx = pts[0].x - start.pts[0].x, dy = pts[0].y - start.pts[0].y;
@@ -441,7 +487,7 @@ export class UI {
         const c0 = { x: (start.pts[0].x + start.pts[1].x) / 2, y: (start.pts[0].y + start.pts[1].y) / 2 };
         const c1 = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
         const ns = Math.min(2.2, Math.max(0.35, start.view.s * d1 / d0));
-        const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+        const cx = view.w / 2, cy = view.h / 2;
         // keep the pinch centre fixed
         const wx = (c0.x - cx - start.view.x) / start.view.s, wy = (c0.y - cy - start.view.y) / start.view.s;
         this.view.s = ns; this.view.x = c1.x - cx - wx * ns; this.view.y = c1.y - cy - wy * ns;
@@ -469,13 +515,13 @@ export class UI {
     });
   }
   centerTree() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = view.w, h = view.h;
     this.view.s = Math.max(0.42, Math.min(w, h - 200) / (9.5 * 86));
     this.view.x = 0; this.view.y = 10;
     this.applyView();
   }
   applyView() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = view.w, h = view.h;
     $('treeWorld').setAttribute('transform', `translate(${w / 2 + this.view.x},${h / 2 + this.view.y}) scale(${this.view.s})`);
   }
   renderTree() {

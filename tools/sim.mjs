@@ -12,7 +12,7 @@ if (K.cs) { TOOLS.forEach(t => t.cost *= K.cs); BAGS.forEach(b => b.cost *= K.cs
 if (K.tg) { TOOLS.forEach((t,k) => t.cost *= Math.pow(K.tg, k)); BAGS.forEach((b,k) => b.cost *= Math.pow(K.tg, k)); MACHINES.forEach((m,i) => m.cost *= Math.pow(K.tg, i*(K.me||1.6))); }
 if (K.mg) D.MACHINES.forEach(()=>{}), globalThis.__MG = K.mg;
 const TAPS_PER_SEC = 3;
-const SELL_DELAY = 1.5;
+const SELL_DELAY = +(process.env.SD || 4); // walk to the bin + empty the bag
 rebuildLayers();
 const g = new Game();
 g.s.crowns = crowns;

@@ -82,6 +82,21 @@ export const MACHINE_MAX = 10;
 export const machineRate = (m, L) => (L <= 0 ? 0 : m.base * L * Math.pow(1.55, L - 1));
 export const machineCost = (m, L) => m.cost * Math.pow(3.2, L);
 
+// Drop-off station upgrades (bought with coins, reset on New Game+).
+export const STATION = [
+  { id: 'speed', name: 'Chute Speed',   max: 10, cost: 25,   growth: 3.3, blurb: 'Your bag empties into the bin faster.',
+    stat: L => `Empties a full bag in ${(1 / stationDrain(L)).toFixed(1)}s` },
+  { id: 'bonus', name: 'Appraiser',     max: 10, cost: 120,  growth: 3.6, blurb: 'Someone at the top who pays a bit extra.',
+    stat: L => `+${L * 6}% on every drop-off` },
+  { id: 'reach', name: 'Wide Hopper',   max: 5,  cost: 300,  growth: 7,   blurb: 'A bigger drop zone, so you walk less.',
+    stat: L => `Drop zone ${stationReach(L).toFixed(1)}m wide` },
+  { id: 'lucky', name: 'Lucky Scale',   max: 5,  cost: 4000, growth: 9,   blurb: 'The scale is slightly broken. In your favour.',
+    stat: L => `${L * 5}% chance a drop-off pays double` },
+];
+export const stationDrain = L => 0.4 * (1 + 0.5 * L);   // fraction of a full bag per second
+export const stationReach = L => 1.5 + 0.45 * L;        // radius of the drop zone
+export const stationCost = (u, L) => u.cost * Math.pow(u.growth, L);
+
 // ---------------------------------------------------------------------------
 // Skill tree. Positions: branch angle + (r rings, a degrees offset).
 // ---------------------------------------------------------------------------

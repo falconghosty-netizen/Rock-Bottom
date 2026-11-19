@@ -6,8 +6,9 @@ import { wallMaterial, floorMaterial, chamberShader, sparkShader } from './shade
 import { makeNoiseTexture, makeRockTexture } from './noisetex.js';
 import { buildYard } from './yard.js';
 import * as Models from './models.js';
+import { view } from './view.js';
 
-const R = 4.6;          // shaft radius
+const R = 5.5;          // shaft radius
 const LAYER_H = 7;      // wall height per layer (visual); you see the last layer's band rise up the wall
 const rnd = (a = 0, b = 1) => a + Math.random() * (b - a);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -16,10 +17,12 @@ const easeOut = t => 1 - Math.pow(1 - t, 3);
 function srgbVec(rgb) { const c = new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace); return new THREE.Vector3(c.r, c.g, c.b); }
 
 const TILE = Math.PI * 2 * R / 4;   // scoop texture repeats 4x around the shaft (seamless)
-// camera: standing at the rim looking into the hole (surface) -> inside the shaft (deep)
-const CAM_SURF = { pos: [0, 5.3, 3.9], look: [0, 0.0, -3.3] };
-const CAM_DEEP = { pos: [0, 4.6, 2.7], look: [0, 0.1, -1.4] };
-const CAMS = { first: { pos: CAM_DEEP.pos, look: CAM_DEEP.look, hfov: 62 } };
+const EYE = 2.7;                    // eye height above the floor
+const WALK = 4.6;                   // walking speed (units / s)
+const PLAYER_R = R - 1.0;           // how close to the wall you can walk
+const STATION_A = -2.45;            // where the drop-off station stands (angle around the shaft)
+// floor height under a point (matches the bowl in the floor shader)
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 export class Scene {
   constructor(canvas, opts = {}) {
@@ -44,13 +47,12 @@ export class Scene {
     this.rockTex = makeRockTexture(512);
     this.ground = 0.6;   // height of the lawn above the dig floor
 
-    this.cam = CAMS.first;
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 200);
-    this.camBase = new THREE.Vector3(...this.cam.pos);
-    this.camLook = new THREE.Vector3(...this.cam.look);
-    this.camera.position.copy(this.camBase);
-    this.camera.lookAt(this.camLook);
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.05, 220);
+    this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);
+    // first-person player
+    this.player = { x: 0, z: 2.2, yaw: 0, pitch: -0.42, bob: 0, moving: 0, stepT: 0 };
+    this.move = { x: 0, y: 0 };         // joystick / keys (-1..1)
 
     this.time = 0;
     this.scroll = 0;
@@ -70,6 +72,7 @@ export class Scene {
     this.toolSwingT = 1;
     this.raycaster = new THREE.Raycaster();
     this.setTool(0);
+    this.buildStation();
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -220,13 +223,145 @@ export class Scene {
   }
 
   resize() {
-    const w = window.innerWidth, h = window.innerHeight;
+    const w = view.w || window.innerWidth, h = view.h || window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
-    const hfov = this.cam.hfov * Math.PI / 180;
-    const vfov = 2 * Math.atan(Math.tan(hfov / 2) / this.camera.aspect);
-    this.camera.fov = Math.min(96, Math.max(50, vfov * 180 / Math.PI));
+    this.camera.fov = w >= h ? 58 : 80;
     this.camera.updateProjectionMatrix();
+  }
+
+  // ------------------------------------------------------------- player
+  floorAt(x, z) {
+    const r = Math.hypot(x, z);
+    return Math.pow(smooth(R - 2.6, R + 0.2, r), 1.7) * 1.2 * Math.min(1, this.ground / 3);
+  }
+  look(dx, dy) {
+    const p = this.player;
+    p.yaw -= dx * 0.0042;
+    p.pitch = Math.max(-1.45, Math.min(1.1, p.pitch - dy * 0.0042));
+  }
+  updatePlayer(dt) {
+    const p = this.player;
+    const mx = this.move.x, my = this.move.y;
+    const mag = Math.min(1, Math.hypot(mx, my));
+    if (mag > 0.05) {
+      // forward is where you look (flattened); joystick up = forward
+      const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+      const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
+      p.x += (fx * my + rx * mx) * WALK * dt;
+      p.z += (fz * my + rz * mx) * WALK * dt;
+    }
+    p.moving += ((mag > 0.05 ? mag : 0) - p.moving) * Math.min(1, dt * 10);
+    // stay inside the shaft
+    const r = Math.hypot(p.x, p.z);
+    if (r > PLAYER_R) { p.x *= PLAYER_R / r; p.z *= PLAYER_R / r; }
+    // don't walk through boulders or the bin
+    const push = (cx, cz, rad) => {
+      const dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz);
+      if (d < rad && d > 1e-4) { p.x = cx + dx / d * rad; p.z = cz + dz / d * rad; }
+    };
+    for (const b of this.boulders.values()) push(b.mesh.position.x, b.mesh.position.z, b.size + 0.55);
+    if (this.station) push(this.binPos.x, this.binPos.z, 1.75);
+    // head bob + footsteps
+    if (p.moving > 0.1) {
+      p.bob += dt * 9 * p.moving;
+      p.stepT += dt * p.moving;
+      if (p.stepT > 0.42) { p.stepT = 0; this.onStep?.(); }
+    }
+  }
+  applyCamera() {
+    const p = this.player;
+    const sh = this.reduceFx ? 0 : this.shake;
+    const bobY = Math.sin(p.bob) * 0.05 * p.moving, bobX = Math.cos(p.bob * 0.5) * 0.03 * p.moving;
+    const breathe = Math.sin(this.time * 0.8) * 0.012;
+    this.camera.position.set(
+      p.x + bobX + (Math.random() - 0.5) * sh * 0.35,
+      this.floorAt(p.x, p.z) + EYE + bobY + breathe + (Math.random() - 0.5) * sh * 0.25,
+      p.z + (Math.random() - 0.5) * sh * 0.35);
+    this.camera.rotation.set(p.pitch, p.yaw, 0);
+    this.camera.updateMatrixWorld();
+  }
+
+  // ------------------------------------------------------------- drop-off station
+  buildStation() {
+    const st = Models.buildStation();
+    const a = STATION_A, rr = R - 0.6;
+    st.position.set(Math.cos(a) * rr, 0, Math.sin(a) * rr);
+    st.lookAt(0, 0, 0);
+    st.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+    this.scene.add(st);
+    this.station = st;
+    this.binPos = new THREE.Vector3(0, 0, -0.9).applyMatrix4(st.matrixWorld.compose(st.position, st.quaternion, st.scale));
+    // drop zone in front of the bin
+    this.zoneCenter = new THREE.Vector3(Math.cos(a) * (R - 3.0), 0, Math.sin(a) * (R - 3.0));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 64), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+    ring.renderOrder = 5;
+    ring.rotation.x = -Math.PI / 2;
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 64), new THREE.MeshBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0.08, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+    disc.renderOrder = 5;
+    disc.rotation.x = -Math.PI / 2;
+    const zone = new THREE.Group(); zone.add(ring, disc);
+    zone.position.copy(this.zoneCenter);
+    zone.traverse(o => o.frustumCulled = false);
+    this.scene.add(zone);
+    this.zone = { group: zone, ring, disc, r: 1.5 };
+    this.heapLevel = 0.2;
+    this.cageT = 0;
+  }
+  setZoneRadius(r) { this.zone.r = r; }
+  inZone() {
+    const p = this.player;
+    return Math.hypot(p.x - this.zoneCenter.x, p.z - this.zoneCenter.z) < this.zone.r;
+  }
+  depositFx(dt, active) {
+    const z = this.zone, t = this.time;
+    z.group.scale.setScalar(z.r);
+    z.group.position.y = this.floorAt(this.zoneCenter.x, this.zoneCenter.z) + 0.05;
+    const inside = this.inZone();
+    z.ring.material.opacity = (inside ? 0.85 : 0.45) + Math.sin(t * 3) * 0.12;
+    z.disc.material.opacity = inside ? 0.16 : 0.06;
+    const { heap, cage, light, rails, rope } = this.station.userData;
+    // near the surface the lift only reaches up to the lawn
+    const liftTop = Math.min(40, Math.max(0.5, this.yard.visible ? this.ground + 0.3 : 40));
+    rails.scale.y = liftTop / 40;
+    rope.visible = !this.yard.visible || this.ground > 3;
+    if (active) {
+      this.heapLevel = Math.min(1, this.heapLevel + dt * 0.6);
+      if (Math.random() < dt * 30) {
+        // dirt arcs from just in front of you into the bin
+        const from = new THREE.Vector3(0.2, -0.6, -0.9).applyMatrix4(this.camera.matrixWorld);
+        const di = this.debrisNext, d = this.debris[di]; this.debrisNext = (di + 1) % this.debris.length;
+        const to = this.binPos.clone().setY(1.6);
+        const T = 0.55;
+        d.life = d.max = T + 0.1;
+        d.p.copy(from);
+        d.v.set((to.x - from.x) / T, (to.y - from.y) / T + 0.5 * 13 * T, (to.z - from.z) / T);
+        d.w.set(rnd(-8, 8), rnd(-8, 8), rnd(-8, 8));
+        d.s = rnd(0.05, 0.1);
+        const pal = this.layerPal();
+        this._c.setRGB(...pal.base, THREE.SRGBColorSpace).multiplyScalar(rnd(0.8, 1.1));
+        this.debrisMesh.setColorAt(di, this._c); this.debrisMesh.instanceColor.needsUpdate = true;
+      }
+    } else this.heapLevel = Math.max(0.2, this.heapLevel - dt * 0.15);
+    heap.scale.y = this.heapLevel * 0.55;
+    heap.material.color.setRGB(...this.layerPal().base, THREE.SRGBColorSpace);
+    // the lift cage goes up whenever the heap is big, then comes back down
+    if (this.heapLevel > 0.85 && this.cageT <= 0) { this.cageT = 4.5; this.heapLevel = 0.25; }
+    if (this.cageT > 0) {
+      this.cageT -= dt;
+      const k = this.cageT / 4.5;
+      cage.position.y = k > 0.5 ? (1 - k) * 2 * 14 : k * 2 * 14;
+    } else cage.position.y = 0;
+    light.intensity = lerp(8, 3, this.sky);
+  }
+  // where the station is on screen, or off-screen direction
+  stationScreen() {
+    const p = this.binPos.clone().setY(2.6);
+    const v = p.clone().project(this.camera);
+    const camDir = new THREE.Vector3(); this.camera.getWorldDirection(camDir);
+    const toSt = p.clone().sub(this.camera.position);
+    const behind = camDir.dot(toSt) < 0;
+    return { x: (v.x * 0.5 + 0.5) * view.w, y: (-v.y * 0.5 + 0.5) * view.h, behind, dist: toSt.length() };
   }
 
   // ------------------------------------------------------------- tool viewmodel
@@ -243,8 +378,8 @@ export class Scene {
     this.toolSwingT = 1;
     this.equipT = 0;
     // rest pose in camera space: bottom-right, angled up and in, like holding it out in front
-    const big = i === 0 ? 0.42 : 0.46;
-    this.toolPose = { x: 0.74, y: -0.9, z: -1.5, rx: -1.0, ry: 0.3, rz: 0.6, s: big };
+    const big = i === 0 ? 0.4 : 0.44;
+    this.toolPose = { x: 1.05, y: -0.72, z: -1.5, rx: -0.55, ry: 0.35, rz: 0.55, s: big };
   }
 
   swingTool(point) {
@@ -262,7 +397,7 @@ export class Scene {
     else { const k = (s - 0.4) / 0.6; pitch = lerp(-0.7, 0, easeOut(k)); fwd = lerp(0.3, 0, easeOut(k)); }
     this.equipT = Math.min(1, this.equipT + dt * 2.2);
     const eq = 1 - easeOut(this.equipT);
-    const bob = Math.sin(this.time * 1.4) * 0.01;
+    const bob = Math.sin(this.time * 1.4) * 0.01 + Math.sin(this.player.bob) * 0.025 * this.player.moving;
     const sway = Math.sin(this.time * 0.9) * 0.008;
     const vib = t.vibrate && s < 0.7 ? (Math.random() - 0.5) * 0.025 : 0;
     h.scale.setScalar(P.s);
@@ -281,21 +416,31 @@ export class Scene {
     const bs = [...this.boulders.values()].map(b => b.mesh);
     const hb = this.raycaster.intersectObjects(bs, false)[0];
     if (hb) return { boulder: hb.object.userData.id, point: hb.point, local: hb.object.worldToLocal(hb.point.clone()) };
+    const hs = this.raycaster.intersectObject(this.station, true)[0];
     const hf = this.raycaster.intersectObject(this.floorProxy, false)[0];
-    if (hf) return { point: hf.point };
-    const p = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p)) p.set(0, 0, -1);
-    if (p.length() > R - 0.8) p.setLength(R - 0.8);
-    return { point: p };
+    if (hs && (!hf || hs.distance < hf.distance)) return { station: true, point: hs.point };
+    if (hf) return { point: hf.point, floor: true };
+    // looking at the walls: hit the shaft cylinder
+    const ray = this.raycaster.ray, o = ray.origin, d = ray.direction;
+    const a = d.x * d.x + d.z * d.z, b = 2 * (o.x * d.x + o.z * d.z), c = o.x * o.x + o.z * o.z - (R - 0.2) * (R - 0.2);
+    const disc = b * b - 4 * a * c;
+    if (a > 1e-6 && disc > 0) {
+      const t = (-b + Math.sqrt(disc)) / (2 * a);
+      const p = o.clone().addScaledVector(d, t);
+      if (p.y > 0 && p.y < Math.min(this.ground, 20)) return { point: p, wall: true };
+    }
+    return { point: null };
   }
 
-  impact(point, power = 1, crit = false) {
+  impact(point, power = 1, crit = false, wall = false) {
     const pal = this.layerPal();
     const n = Math.round((crit ? 14 : 5) * (this.reduceFx ? 0.6 : 1));
     this.spawnDebris(point, n, crit ? 3.6 : 2.4, pal);
     this.spawnPuff(point, crit ? 1.5 : 0.9, pal, null, crit ? 0.5 : 0.32);
-    const c = this.craters[this.craterIdx++ % this.craters.length];
-    c.set(point.x + rnd(-0.08, 0.08), point.z + rnd(-0.08, 0.08), crit ? rnd(0.85, 1.1) : rnd(0.5, 0.7), crit ? 1.0 : 0.65);
+    if (!wall) {
+      const c = this.craters[this.craterIdx++ % this.craters.length];
+      c.set(point.x + rnd(-0.08, 0.08), point.z + rnd(-0.08, 0.08), crit ? rnd(0.85, 1.1) : rnd(0.5, 0.7), crit ? 1.0 : 0.65);
+    }
     if (crit && this.layer >= 2) this.spawnSparks(point, 14, this.layer >= 6 ? '#ff8a3a' : this.layer === 4 ? '#a8f0ff' : '#ffd9a0', 5);
     this.scrollVel += crit ? 0.6 : 0.22;
     if (crit) { this.shake = Math.max(this.shake, 0.3); this.flash = 0.12; }
@@ -362,7 +507,7 @@ export class Scene {
     const onWall = (a, inset, y) => new THREE.Vector3(Math.cos(a) * (R - inset), y, Math.sin(a) * (R - inset));
     switch (kind) {
       case 'moles': {
-        const a = [-2.15, -0.95, -1.55][idx];
+        const a = [-1.05, 0.55, 1.9][idx];
         const g = new THREE.Group();
         const hole = new THREE.Mesh(new THREE.CircleGeometry(0.5, 32), new THREE.MeshBasicMaterial({ color: '#070504' }));
         hole.position.set(0, 0.55, -0.32); hole.scale.y = 0.8;
@@ -374,7 +519,7 @@ export class Scene {
         m.mole = mole; m.obj = g; break;
       }
       case 'buckets': {
-        const a = [-1.25, -1.85][idx];
+        const a = [-0.45, 1.25][idx];
         const g = Models.buildBucket();
         g.scale.setScalar(0.9);
         g.position.copy(onWall(a, 0.9, 9));
@@ -382,7 +527,7 @@ export class Scene {
       }
       case 'digger': {
         const g = Models.buildExcavator();
-        const a = -0.55;
+        const a = -1.55;
         g.position.copy(onWall(a, 0.3, 7.5));
         g.rotation.y = -a + Math.PI;
         g.scale.setScalar(0.62);
@@ -390,14 +535,14 @@ export class Scene {
       }
       case 'steam': {
         const g = Models.buildSteamDrill();
-        const a = Math.PI * 0.86;
+        const a = 2.75;
         g.position.copy(onWall(a, 1.3, 1.05));
         g.scale.setScalar(0.62);
         m.obj = g; break;
       }
       case 'borer': {
         const g = Models.buildBorer();
-        const a = -2.6;
+        const a = 0.0;
         g.position.copy(onWall(a, 0.35, 1.5));
         g.lookAt(0, 1.5, 0);
         g.scale.setScalar(0.6);
@@ -490,9 +635,11 @@ export class Scene {
     mesh.castShadow = true; mesh.receiveShadow = true;
     let pos;
     for (let k = 0; k < 20; k++) {
-      const a = rnd(0, Math.PI * 2), rr = rnd(1.2, R - 1.7);
+      const a = rnd(0, Math.PI * 2), rr = rnd(1.0, R - 1.8);
       pos = new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr);
-      if (pos.z < 0.8 && pos.x < 1.4 && ![...this.boulders.values()].some(o => o.mesh.position.distanceTo(pos) < 1.8)) break;
+      const far = (x, z, d) => Math.hypot(pos.x - x, pos.z - z) > d;
+      if (far(this.player.x, this.player.z, 2.4) && far(this.zoneCenter.x, this.zoneCenter.z, this.zone.r + 1.4) && far(this.binPos.x, this.binPos.z, 2.6)
+        && ![...this.boulders.values()].some(o => o.mesh.position.distanceTo(pos) < 1.8)) break;
     }
     mesh.position.copy(pos).setY(12);
     mesh.rotation.set(rnd(0, 6), rnd(0, 6), rnd(0, 6));
@@ -522,11 +669,12 @@ export class Scene {
     const b = this.boulders.get(id); if (!b) return null;
     const v = b.mesh.position.clone(); v.y += b.size * 1.3;
     v.project(this.camera);
-    return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
+    if (v.z > 1) return null;
+    return { x: (v.x * 0.5 + 0.5) * view.w, y: (-v.y * 0.5 + 0.5) * view.h };
   }
   worldToScreen(p) {
     const v = p.clone().project(this.camera);
-    return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
+    return { x: (v.x * 0.5 + 0.5) * view.w, y: (-v.y * 0.5 + 0.5) * view.h };
   }
   clearBoulders() { for (const [id, b] of this.boulders) { this.scene.remove(b.mesh); } this.boulders.clear(); }
 
@@ -650,7 +798,7 @@ export class Scene {
     this.motes.material.color.set(deep ? '#ffa060' : this.layer === 4 ? '#cfe8ff' : '#fff0dc');
   }
 
-  update(dt, digRate) {
+  update(dt, digRate, depositing = false) {
     this.time += dt;
     const u = this.uniforms;
     // ground height eases toward the target so every tap visibly lowers the floor
@@ -666,9 +814,6 @@ export class Scene {
     u.uBowl.value = Math.min(1, this.ground / 3);
     this.wallShadow.scale.y = wallH;
     this.wallShadow.visible = yardOn;
-    // camera rides from the rim down into the shaft
-    const cs = THREE.MathUtils.smoothstep(this.ground, 0.6, 7.5);
-    for (let i = 0; i < 3; i++) { this.camBase.setComponent(i, lerp(CAM_SURF.pos[i], CAM_DEEP.pos[i], cs)); this.camLook.setComponent(i, lerp(CAM_SURF.look[i], CAM_DEEP.look[i], cs)); }
     this.updateStones();
     u.uTime.value = this.time;
     if (this.yard.userData.grassU) this.yard.userData.grassU.value = this.time;
@@ -680,15 +825,11 @@ export class Scene {
     this.applyLighting();
 
     this.shake *= Math.pow(0.004, dt);
-    const sh = this.reduceFx ? 0 : this.shake;
     if (!this.finale || this.finale.phase === 0) {
-      this.camera.position.set(
-        this.camBase.x + Math.sin(this.time * 0.45) * 0.04 + (Math.random() - 0.5) * sh * 0.4,
-        this.camBase.y + Math.sin(this.time * 0.6) * 0.03 + (Math.random() - 0.5) * sh * 0.25,
-        this.camBase.z + (Math.random() - 0.5) * sh * 0.4);
-      this.camera.lookAt(this.camLook.x + Math.sin(this.time * 0.3) * 0.05, this.camLook.y, this.camLook.z);
+      if (!this.finale) this.updatePlayer(dt);
+      this.applyCamera();
     }
-    this.camera.updateMatrixWorld();
+    this.depositFx(dt, depositing);
 
     this.updateTool(dt);
     this.updateMachines(dt, digRate > 0.01);
@@ -787,7 +928,7 @@ export class Scene {
       this.flash = Math.max(this.flash, f.t * 0.08);
       if (Math.random() < dt * 20) this.spawnSparks(new THREE.Vector3(rnd(-2.5, 2.5), 0.1, rnd(-3, 1)), 3, '#ffb050', 5);
       if (f.t > 2.6) {
-        f.phase = 1; f.t = 0;
+        f.phase = 1; f.t = 0; f.from = this.camera.position.clone();
         for (let i = 0; i < 5; i++) this.spawnDebris(new THREE.Vector3(rnd(-2, 2), 0.2, rnd(-2.5, 0.5)), 24, 6, this.layerPal(), 1.5);
         this.flash = 1.5;
         this.buildChamber();
@@ -795,7 +936,7 @@ export class Scene {
       }
     } else if (f.phase === 1) {
       const k = Math.min(1, f.t / 2.4), e = easeOut(k);
-      this.camera.position.set(0, lerp(this.cam.pos[1], -15, e), lerp(this.cam.pos[2], 8, e));
+      this.camera.position.set(lerp(f.from.x, 0, e), lerp(f.from.y, -15, e), lerp(f.from.z, 8, e));
       this.camera.lookAt(0, lerp(0, -21, e), lerp(-1, -3, e));
       if (k >= 1) { f.phase = 2; f.t = 0; f.cb?.('landed'); }
     } else if (f.phase === 2) {
@@ -863,7 +1004,8 @@ export class Scene {
     this.wall.visible = this.floor.visible = this.motes.visible = true;
     this.scene.fog.density = 0.012;
     for (const arr of Object.values(this.machines)) for (const m of arr) m.obj.visible = true;
-    this.camBase.set(...this.cam.pos); this.camLook.set(...this.cam.look);
+    Object.assign(this.player, { x: 0, z: 2.2, yaw: 0, pitch: -0.42 });
+    this.camera.rotation.set(0, 0, 0);
     this.scroll = 0;
   }
 }

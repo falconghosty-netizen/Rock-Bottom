@@ -114,6 +114,17 @@ export class Audio {
     this.noise({ t: 0.02, freq: 600, type: 'lowpass', dur: 0.4, gain: 0.35, brown: true });
     this.tone({ t: 0.01, freq: 880, to: 1320, dur: 0.12, gain: 0.06, type: 'triangle' });
   }
+  step(layer) {
+    if (!this.ok()) return;
+    const soft = layer <= 1 || layer === 3;
+    this.noise({ freq: soft ? rnd(500, 700) : rnd(1200, 1700), type: soft ? 'lowpass' : 'bandpass', q: soft ? 0.7 : 1.4, dur: 0.09, gain: soft ? 0.16 : 0.1 });
+    this.tone({ freq: rnd(70, 90), to: 45, dur: 0.07, gain: 0.12 });
+  }
+  pour() {
+    if (!this.ok()) return;
+    this.noise({ freq: rnd(1400, 2600), type: 'bandpass', q: 1.2, dur: 0.12, gain: 0.12 });
+    if (Math.random() < 0.35) this.tone({ freq: rnd(2600, 3600), dur: 0.12, gain: 0.03, verb: 0.3 });
+  }
   full() {
     if (!this.ok()) return;
     this.tone({ freq: 220, dur: 0.09, gain: 0.18, type: 'square' });

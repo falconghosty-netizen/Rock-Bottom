@@ -4,6 +4,11 @@ An incremental digging game for iPhone. Start in a backyard, tap to dig, and
 go 6,371 km down to the centre of the Earth through 8 layers. Along the way you
 upgrade tools, hire machines, unlock skills, smash boulders and find 40 treasures.
 
+**Controls (hold the phone sideways):** left thumb anywhere on the left side is a
+joystick to walk. Drag on the right side to look around. Tap to dig. Walk into
+the glowing ring by the yellow bin to drop off your dirt for coins, and tap the
+bin to upgrade it. On a computer: WASD to walk, drag to look, click to dig.
+
 It is a web app that installs to your Home Screen and then runs offline, full
 screen, like a normal app. Everything is built in code: 3D models, textures and
 sounds are all generated, so the files never touch the internet once installed.

@@ -315,7 +315,7 @@ export function buildGrass(inner, holeR, count = 42000) {
     e.set(rr(-0.18, 0.18), rand() * Math.PI * 2, rr(-0.18, 0.18));
     q.setFromEuler(e);
     if (nearEdge > 0) q.premultiply(new THREE.Quaternion().setFromAxisAngle(v.set(-Math.sin(a), 0, Math.cos(a)), -nearEdge * 0.7));
-    const h = rr(0.32, 0.62) * (1 - nearEdge * 0.15), w = rr(0.07, 0.11);
+    const h = rr(0.2, 0.38) * (1 - nearEdge * 0.1), w = rr(0.06, 0.09);
     s3.set(w, h, w * 1.2);
     m4.compose(v.set(x, 0, z), q, s3);
     mesh.setMatrixAt(n, m4);

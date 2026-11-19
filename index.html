@@ -16,6 +16,7 @@
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
+<div id="app">
 <canvas id="view"></canvas>
 
 <div id="hud">
@@ -24,7 +25,12 @@
     <div id="depth">0 m</div>
     <div id="sub"><span id="layerName">Topsoil</span> · <span id="rate">+0/s</span></div>
   </div>
-  <button id="menuBtn" class="iconbtn" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <div id="navRow">
+    <button class="navbtn" data-panel="shop"><svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-9.5 9.5H5v-5z"/><path d="M12.5 6.5l5 5"/></svg><span>SHOP</span></button>
+    <button class="navbtn" data-panel="skills"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><circle cx="12" cy="13" r="2.2"/><path d="M12 7.2v3.6M10.4 14.6l-3.8 2M13.6 14.6l3.8 2"/></svg><span>SKILLS</span><i id="ptBadge" class="badge hidden">0</i></button>
+    <button class="navbtn" data-panel="finds"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg><span>FINDS</span></button>
+    <button class="navbtn" id="menuBtn" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>MENU</span></button>
+  </div>
   <div id="boost" class="hidden"></div>
 
   <div id="bottom">
@@ -34,18 +40,15 @@
       <div class="barIcon"><svg viewBox="0 0 24 24"><path d="M7 9V7a5 5 0 0 1 10 0v2"/><rect x="4" y="9" width="16" height="12" rx="3"/></svg></div>
       <div class="barIcon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></div>
     </div>
-    <div id="actions">
-      <button id="sellBtn" class="hidden"><span class="lbl">SELL</span><span id="sellVal">0</span></button>
-      <div id="bagText">0 / 30</div>
-      <div id="navRow">
-        <button class="navbtn" data-panel="shop"><svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-9.5 9.5H5v-5z"/><path d="M12.5 6.5l5 5"/></svg><span>SHOP</span></button>
-        <button class="navbtn" data-panel="skills"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><circle cx="12" cy="13" r="2.2"/><path d="M12 7.2v3.6M10.4 14.6l-3.8 2M13.6 14.6l3.8 2"/></svg><span>SKILLS</span><i id="ptBadge" class="badge hidden">0</i></button>
-        <button class="navbtn" data-panel="finds"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg><span>FINDS</span></button>
-      </div>
-    </div>
+    <div id="bagText">0 / 30</div>
   </div>
+  <div id="dropTag" class="hidden"><span>DROP-OFF</span><i></i></div>
+  <div id="dropArrow" class="hidden"><svg viewBox="0 0 24 24"><path d="M5 12h12M12 6l6 6-6 6"/></svg><span>DROP-OFF</span></div>
+  <div id="depositInfo" class="hidden"></div>
 </div>
 
+<div id="stick" class="hidden"><div id="knob"></div></div>
+<div id="hint"><b>Left thumb</b> walk &nbsp;·&nbsp; <b>Drag right side</b> look &nbsp;·&nbsp; <b>Tap</b> dig</div>
 <div id="floaters"></div>
 <div id="boulderBars"></div>
 <div id="toasts"></div>
@@ -69,10 +72,16 @@
 
 <div id="finale" class="hidden"><div id="dialog"></div><div id="results" class="hidden"></div></div>
 <div id="loading"><div class="lt">Rock Bottom</div><div class="ls">grabbing a shovel…</div></div>
+</div>
 
 <script type="module" src="js/main.js"></script>
 <script>
-  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    // when an update finishes installing, reload once so it takes effect straight away
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadController) location.reload(); });
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
 </script>
 </body>
 </html>

@@ -641,3 +641,51 @@ export function buildCrown() {
 export function stoneGeometry() {
   return lumpy(new THREE.IcosahedronGeometry(1, 3), 0.18, 1.6, 4.2);
 }
+
+// --------------------------------------------------------------- drop-off station
+// A yellow hopper bin against the wall with a lift that hauls dirt up the shaft.
+// Built facing +Z (the open side faces the player); origin on the floor at the bin's front.
+export function buildStation() {
+  const g = new THREE.Group();
+  const yellow = MAT.paint('#e7a321', 0.45), dk = MAT.darkSteel('#3a3c41', 0.5), st = MAT.steel('#c4c8cd', 0.35);
+  const black = MAT.paint('#222225', 0.6);
+  const bin = new THREE.Group(); bin.position.set(0, 0, -0.9); g.add(bin);
+  // hopper: wide top, narrow bottom (square lathe = 4 sides)
+  const hop = mesh(lathe([[0.55, 0], [0.62, 0.05], [1.15, 1.1], [1.22, 1.16], [1.1, 1.16], [0.5, 0.12], [0, 0.12]], 4), yellow, 0, 0.9, 0);
+  hop.rotation.y = Math.PI / 4; bin.add(hop);
+  // dark steel rim around the top
+  for (let i = 0; i < 4; i++) {
+    const rim = mesh(roundedBox(1.86, 0.12, 0.12, 0.04), dk, 0, 2.07, 0);
+    rim.rotation.y = i * Math.PI / 2; rim.translateZ(0.87); bin.add(rim);
+  }
+  for (const [x, z] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) bin.add(mesh(cyl(0.07, 0.07, 1.0, 10), dk, x, 0.5, z));
+  bin.add(mesh(roundedBox(1.0, 0.12, 1.0, 0.04), dk, 0, 0.95, 0));
+  // dirt heap inside (grows while you deposit)
+  const heap = mesh(new THREE.SphereGeometry(0.85, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), std({ color: '#7a4a2c', roughness: 1 }), 0, 1.25, 0);
+  heap.scale.y = 0.2; heap.name = 'heap'; bin.add(heap);
+  // lift: two rails up the wall + a cage that rides them
+  const lift = new THREE.Group(); lift.position.set(0, 0, -2.0); g.add(lift);
+  const rails = new THREE.Group(); lift.add(rails);
+  for (const x of [-0.75, 0.75]) rails.add(mesh(new THREE.BoxGeometry(0.12, 40, 0.12), dk, x, 20, 0));
+  for (let y = 0.6; y < 40; y += 1.6) rails.add(mesh(new THREE.BoxGeometry(1.5, 0.06, 0.06), dk, 0, y, -0.03));
+  const cage = new THREE.Group(); cage.name = 'cage'; lift.add(cage);
+  cage.add(mesh(roundedBox(1.25, 0.8, 0.9, 0.05), MAT.rusty('#9aa0a6'), 0, 0.4, 0.5));
+  cage.add(mesh(new THREE.BoxGeometry(1.1, 0.1, 0.8), std({ color: '#6e4328', roughness: 1 }), 0, 0.78, 0.5));
+  const rope = mesh(cyl(0.02, 0.02, 40, 6), std({ color: '#b09060', roughness: 1 }), 0, 20.8, 0.5); rope.name = 'rope'; cage.add(rope);
+  // work lamp on a post
+  const post = mesh(cyl(0.05, 0.06, 3.2, 10), dk, 1.35, 1.6, -0.6); g.add(post);
+  const lampHead = mesh(cyl(0.16, 0.22, 0.25, 16), black, 1.35, 3.2, -0.45); lampHead.rotation.x = 0.7; g.add(lampHead);
+  const bulb = mesh(new THREE.CircleGeometry(0.15, 16), MAT.glow('#fff1c8', 4), 1.35, 3.12, -0.33); bulb.rotation.x = Math.PI / 2 + 0.7; g.add(bulb);
+  const light = new THREE.PointLight('#ffd9a0', 8, 9, 1.6); light.position.set(1.2, 2.9, 0.2); g.add(light);
+  // sign
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f2ead8'; x.fillRect(0, 0, 256, 96);
+  x.fillStyle = '#2a2420'; x.font = 'bold 44px Mont, Helvetica, Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('DROP-OFF', 128, 50);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const sign = mesh(new THREE.PlaneGeometry(1.4, 0.52), std({ map: tex, roughness: 0.7 }), -1.3, 2.35, -0.5); sign.rotation.y = 0.25; g.add(sign);
+  const board = mesh(new THREE.BoxGeometry(1.5, 0.62, 0.05), dk, -1.3, 2.35, -0.53); board.rotation.y = 0.25; g.add(board);
+  g.add(mesh(cyl(0.04, 0.04, 2.1, 8), dk, -1.3, 1.05, -0.56));
+  g.userData = { heap, cage, light, rails, lift, rope };
+  return g;
+}

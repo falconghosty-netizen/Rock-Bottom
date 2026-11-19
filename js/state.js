@@ -1,7 +1,7 @@
 // Game state + rules. No DOM, no rendering: main.js wires events to visuals,
 // and tools/sim.mjs runs this headless to balance the economy.
 import { LAYERS, TOOLS, BAGS, MACHINES, MACHINE_MAX, SKILLS, TREASURES, ACHIEVEMENTS,
-         CORE_DEPTH, machineRate, machineCost } from './data.js';
+         CORE_DEPTH, machineRate, machineCost, STATION, stationDrain, stationReach, stationCost } from './data.js';
 
 const SAVE_KEY = 'rockbottom.save.v1';
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map(s => [s.id, s]));
@@ -28,6 +28,7 @@ export function freshState(keep = {}) {
     tool: 0,
     bag: 0,
     machines: MACHINES.map(() => 0),
+    station: { speed: 0, bonus: 0, reach: 0, lucky: 0 },
     skills: ['root'],
     milestones: 0,        // milestone points earned this run
     layersReached: 1,
@@ -47,6 +48,8 @@ export function freshState(keep = {}) {
 export class Game {
   constructor(saved) {
     this.s = saved ? Object.assign(freshState(), saved) : freshState();
+    this.s.station = Object.assign({ speed: 0, bonus: 0, reach: 0, lucky: 0 }, this.s.station);
+    this.depositing = null;
     this.listeners = {};
     this.boulders = [];   // {id, hp, max, reward}
     this.boulderTimer = 25;
@@ -281,6 +284,48 @@ export class Game {
     s.stats.sells++;
     this.emit('sell', { value, units, auto, lucky });
     return value;
+  }
+
+  // ------------------------------------------------------------- drop-off station
+  get stationReach() { return stationReach(this.s.station.reach); }
+  // Called every frame with whether the player stands in the drop zone.
+  deposit(dt, inZone) {
+    const s = this.s, st = this.st;
+    if (inZone && s.bagUnits > 0) {
+      if (!this.depositing) this.depositing = { value: 0, units: 0, full: s.bagUnits >= st.bagCap - 1e-6 };
+      const rate = Math.max(6, st.bagCap * stationDrain(s.station.speed));
+      const take = Math.min(s.bagUnits, rate * dt);
+      const frac = take / s.bagUnits;
+      let value = s.bagValue * frac;
+      s.bagValue -= value; s.bagUnits -= take;
+      if (s.bagUnits < 1e-6) { s.bagUnits = 0; s.bagValue = 0; }
+      value *= 1 + s.station.bonus * 0.06;
+      if (this.depositing.full && st.bulkBonus) value *= 1 + st.bulkBonus;
+      this.earn(value);
+      this.depositing.value += value; this.depositing.units += take;
+      this.emit('depositTick', { value, units: take });
+      if (s.bagUnits <= 0) this.finishDeposit();
+    } else if (this.depositing) this.finishDeposit();
+  }
+  finishDeposit() {
+    const d = this.depositing; this.depositing = null;
+    if (!d || d.units <= 0) return;
+    const s = this.s, st = this.st;
+    let lucky = false;
+    const p = s.station.lucky * 0.05 + (st.luckyCoin || 0);
+    if (p > 0 && Math.random() < p) { this.earn(d.value); d.value *= 2; lucky = true; }
+    s.stats.sells++;
+    this.emit('deposited', { value: d.value, units: d.units, lucky });
+  }
+  stationUpCost(i) {
+    const u = STATION[i], L = this.s.station[u.id];
+    return L >= u.max ? Infinity : stationCost(u, L);
+  }
+  buyStation(i) {
+    const c = this.stationUpCost(i); if (this.s.coins < c) return false;
+    const u = STATION[i];
+    this.s.coins -= c; this.s.station[u.id]++;
+    this.emit('buy', { kind: 'station', i, level: this.s.station[u.id] }); return true;
   }
 
   // ------------------------------------------------------------- shopping
