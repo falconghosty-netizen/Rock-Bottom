@@ -1,5 +1,5 @@
 // Offline cache: everything the game needs is stored on first visit.
-const VERSION = 'rockbottom-v2';
+const VERSION = 'rockbottom-v3';
 const FILES = [
   './', './index.html', './manifest.webmanifest', './css/style.css',
   './js/main.js', './js/state.js', './js/data.js', './js/scene.js', './js/shaders.js', './js/models.js',

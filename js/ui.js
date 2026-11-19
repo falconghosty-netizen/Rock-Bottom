@@ -69,6 +69,7 @@ export class UI {
     $('menuBtn').addEventListener('click', () => { this.audio.ui(); this.open('menu'); });
     $('sheetClose').addEventListener('click', () => this.close());
     $('treeClose').addEventListener('click', () => this.close());
+    $('treeDone').addEventListener('click', () => this.close());
     $('respecBtn').addEventListener('click', () => {
       if (this.g.s.skills.length <= 1) return;
       if (this.respecArmed) { this.g.respec(); this.respecArmed = false; $('respecBtn').textContent = 'Reset'; this.renderTree(); this.audio.buy(); }

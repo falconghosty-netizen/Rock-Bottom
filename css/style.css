@@ -155,7 +155,10 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px;
 /* ---------------- skill tree ---------------- */
 #tree { position: fixed; inset: 0; background: radial-gradient(120% 80% at 50% 45%, #2b2119 0%, #15100c 70%); animation: fadeIn .25s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } }
-.treeHead { position: absolute; left: 0; right: 0; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: calc(14px + var(--sat)) 12px 10px 20px; background: linear-gradient(#15100c 40%, rgba(21,16,12,0)); }
+.treeHead { position: absolute; left: 0; right: 0; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: calc(12px + var(--sat)) calc(14px + var(--sar)) 10px calc(20px + var(--sal)); background: linear-gradient(#15100c 40%, rgba(21,16,12,0)); }
+.iconbtn.close { width: 48px; height: 48px; background: rgba(255,255,255,.14); }
+.iconbtn.close:active { background: rgba(255,255,255,.28); }
+#treeDone { position: absolute; z-index: 3; left: calc(16px + var(--sal)); bottom: calc(14px + var(--sab)); padding: 13px 26px; font-size: 15px; }
 .treeTitle { font-weight: 800; font-size: 24px; }
 .treeSub { font-weight: 600; font-size: 13px; color: var(--mute); margin-top: 2px; }
 .treeSub b { color: var(--cyan); font-weight: 800; }
