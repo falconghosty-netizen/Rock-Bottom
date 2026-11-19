@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rock Bottom">
+<meta name="theme-color" content="#1a1410">
+<title>Rock Bottom</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="hud">
+  <div id="topleft">
+    <div id="coins"><span id="coinVal">0</span><svg class="coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#f2b33d"/><circle cx="12" cy="12" r="7" fill="none" stroke="#c98a1c" stroke-width="2"/><path d="M12 8v8M9.5 10.2c0-1 1-1.6 2.5-1.6s2.4.6 2.4 1.5c0 2-4.9 1.2-4.9 3.4 0 .9 1 1.6 2.5 1.6s2.5-.6 2.5-1.6" fill="none" stroke="#c98a1c" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+    <div id="depth">0 m</div>
+    <div id="sub"><span id="layerName">Topsoil</span> · <span id="rate">+0/s</span></div>
+  </div>
+  <button id="menuBtn" class="iconbtn" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <div id="boost" class="hidden"></div>
+
+  <div id="bottom">
+    <div id="bars">
+      <div class="bar" id="bagBar"><div class="fill"></div></div>
+      <div class="bar" id="ptBar"><div class="fill"></div></div>
+      <div class="barIcon"><svg viewBox="0 0 24 24"><path d="M7 9V7a5 5 0 0 1 10 0v2"/><rect x="4" y="9" width="16" height="12" rx="3"/></svg></div>
+      <div class="barIcon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></div>
+    </div>
+    <div id="actions">
+      <button id="sellBtn" class="hidden"><span class="lbl">SELL</span><span id="sellVal">0</span></button>
+      <div id="bagText">0 / 30</div>
+      <div id="navRow">
+        <button class="navbtn" data-panel="shop"><svg viewBox="0 0 24 24"><path d="M14.5 4.5l5 5-9.5 9.5H5v-5z"/><path d="M12.5 6.5l5 5"/></svg><span>SHOP</span></button>
+        <button class="navbtn" data-panel="skills"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><circle cx="12" cy="13" r="2.2"/><path d="M12 7.2v3.6M10.4 14.6l-3.8 2M13.6 14.6l3.8 2"/></svg><span>SKILLS</span><i id="ptBadge" class="badge hidden">0</i></button>
+        <button class="navbtn" data-panel="finds"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg><span>FINDS</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="floaters"></div>
+<div id="boulderBars"></div>
+<div id="toasts"></div>
+<div id="banner" class="hidden"><div class="small" id="bannerSmall"></div><div class="big" id="bannerBig"></div><div class="line"></div><div class="small" id="bannerDepth"></div></div>
+<div id="treasureCard" class="hidden"><div class="small">NEW FIND</div><div class="big" id="tName"></div><div class="bonus" id="tBonus"></div><div class="hint">tap to keep</div></div>
+
+<div id="sheet" class="hidden">
+  <div class="sheetHead"><div class="sheetTitle" id="sheetTitle">Shop</div><button class="iconbtn close" id="sheetClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div class="tabs" id="sheetTabs"></div>
+  <div class="sheetBody" id="sheetBody"></div>
+</div>
+
+<div id="tree" class="hidden">
+  <div class="treeHead">
+    <div><div class="treeTitle">Skill Tree</div><div class="treeSub"><b id="treePts">0</b> points to spend</div></div>
+    <div class="treeBtns"><button class="pill ghost" id="respecBtn">Reset</button><button class="iconbtn close" id="treeClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  </div>
+  <svg id="treeSvg"></svg>
+  <div id="nodeCard" class="hidden"><div class="ncTop"><div><div class="ncName" id="ncName"></div><div class="ncBranch" id="ncBranch"></div></div><div class="ncCost" id="ncCost"></div></div><div class="ncDesc" id="ncDesc"></div><button class="pill" id="ncBuy">Unlock</button></div>
+</div>
+
+<div id="finale" class="hidden"><div id="dialog"></div><div id="results" class="hidden"></div></div>
+<div id="loading"><div class="lt">Rock Bottom</div><div class="ls">grabbing a shovel…</div></div>
+
+<script type="module" src="js/main.js"></script>
+<script>
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
